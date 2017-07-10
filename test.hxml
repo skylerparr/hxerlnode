@@ -1,0 +1,19 @@
+-main TestMain
+-lib munit
+-lib hamcrest
+-lib mockatoo
+-lib minject
+-lib mconsole
+-lib hxcpp-debugger
+--macro mcover.MCover.coverage([''],['src'],[])
+-D MCOVER
+-cp src
+
+-cp test
+-D HXCPP_M64
+-D test
+#-debug
+#-D HXCPP_DEBUGGER
+#-D integration
+--no-inline
+-cpp build/cpp_test
