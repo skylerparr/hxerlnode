@@ -1,4 +1,5 @@
 package node;
+import haxe.io.BytesInput;
 import haxe.io.Bytes;
 import haxe.io.BytesOutput;
 import haxe.io.Input;
@@ -33,8 +34,69 @@ class EPMD {
     getNames(writeSocket);
 
     sockets = Socket.select([nameSocket], [], [nameSocket], 60000);
+    var map = readNames(sockets.read.pop());
+    nameSocket.close();
+
+    var portSocket: Socket = new Socket();
+    portSocket.setBlocking(true);
+    portSocket.connect(new Host("127.0.0.1"), EPMD_PORT);
+
+    sockets = Socket.select([portSocket], [portSocket], [portSocket], 60000);
+    writeSocket = sockets.write.pop();
+    portPleaseRequest(writeSocket, "foo");
+    sockets = Socket.select([portSocket], [], [portSocket], 60000);
     trace(sockets);
-    readNames(sockets.read.pop());
+    portResponse(sockets.read.pop());
+
+    trace(map);
+    var fooPort = map.get("foo");
+    connectToHost(fooPort);
+  }
+
+  private function portPleaseRequest(writeSocket: Socket, nodeName: String):Void {
+    var output: BytesOutput = new BytesOutput();
+    output.bigEndian = true;
+    output.writeUInt16(2 + nodeName.length - 1);
+    output.writeInt8(122);
+
+    var b: Bytes = Bytes.ofString(nodeName);
+    output.write(b);
+
+    writeSocket.output.write(output.getBytes());
+  }
+
+  private function portResponse(readSocket:Socket):Void {
+    readSocket.setBlocking(true);
+    readSocket.waitForRead();
+    var input: Input = readSocket.input;
+    input.bigEndian = true;
+
+    var output: BytesOutput = new BytesOutput();
+    output.bigEndian = true;
+    try {
+      while(true) {
+        output.writeInt8(input.readInt8());
+      }
+    } catch(e: Dynamic) {
+      trace(e);
+    }
+    var b: Bytes = output.getBytes();
+    input = new BytesInput(b);
+    input.bigEndian = true;
+    trace(input.readInt8());
+    trace(input.readInt8());
+    trace(input.readUInt16());
+    trace(input.readInt8());
+    trace(input.readInt8());
+    trace(input.readUInt16());
+    trace(input.readUInt16());
+    var len: Int = input.readUInt16();
+    trace(input.readString(len));
+    trace(input.readUInt16());
+  }
+
+  private function connectToHost(port:Int):Void {
+
   }
 
   private function parseResponse():Void {
@@ -51,8 +113,7 @@ class EPMD {
     }
   }
 
-  private function readNames(readSocket: Socket):Void {
-//    readSocket.waitForRead();
+  private function readNames(readSocket: Socket):Map<String, Int> {
     var input: Input = readSocket.input;
     input.bigEndian = true;
 
@@ -68,7 +129,15 @@ class EPMD {
     }
     var bytes: Bytes = output.getBytes();
     var string = bytes.readString(0, bytes.length - 1);
-    trace(string);
+
+    var hosts: Array<String> = string.split("\n");
+    var map: Map<String, Int> = new Map<String, Int>();
+    for(host in hosts) {
+      var frags: Array<String> = host.split(" ");
+      map.set(frags[1], Std.parseInt(frags[4]));
+    }
+
+    return map;
   }
 
   private function getNames(socket:Socket):Void {
