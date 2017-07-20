@@ -1,8 +1,10 @@
 package ;
+import node.ErlangNodeConnection;
+import node.EPMDConnection;
 import sys.net.Host;
 import sys.net.Socket;
 import cpp.vm.Thread;
-import node.EPMD;
+import node.Node;
 @IgnoreCover
 class Main {
   public static function main() {
@@ -16,25 +18,16 @@ class Main {
       socket.listen(9999);
       trace("socket ready to accept connections");
       var otherSocket: Socket = socket.accept();
-      otherSocket.setBlocking(true);
-      trace("got other socket");
-      try {
-        trace(otherSocket);
-        otherSocket.waitForRead();
-        trace(otherSocket.input.readByte());
-        while(true) {
-          otherSocket.output.writeByte(119);
-          Sys.sleep(1);
-        }
-      } catch(e: Dynamic) {
-        trace(e);
-      }
+      ErlangNodeConnection.receiveConnect(otherSocket);
     });
 
-    Sys.sleep(1);
     Thread.create(function(): Void {
-      var epmd: EPMD = new EPMD();
-      epmd.connect("bar", 1337);
+      var epmdConnection: EPMDConnection = Node.start("bar", "127.0.0.1", 1337);
+      var nodes: Map<String, Int> = epmdConnection.getNodes();
+      trace(nodes);
+      var port = epmdConnection.portPleaseRequest("foo");
+//      trace(port);
+//      epmdConnection.connectToNode("bar@127.0.0.1", "foo", port);
     });
 
     Thread.readMessage(true);
