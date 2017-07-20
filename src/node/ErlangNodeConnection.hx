@@ -31,27 +31,10 @@ class ErlangNodeConnection {
         var output: BytesOutput = new BytesOutput();
         output.bigEndian = true;
 
-        var flags: Int = HandshakeConstants.FLAG_PUBLISHED;
-        flags |= HandshakeConstants.FLAG_EXTENDED_REFERENCES;
-        flags |= HandshakeConstants.FLAG_DIST_MONITOR;
-        flags |= HandshakeConstants.FLAG_FUN_TAGS;
-        flags |= HandshakeConstants.FLAG_DIST_MONITOR_NAME;
-        flags |= HandshakeConstants.FLAG_HIDDEN_ATOM_CACHE;
-        flags |= HandshakeConstants.FLAG_NEW_FUN_TAGS;
-        flags |= HandshakeConstants.FLAG_EXTENDED_PIDS_PORTS;
-        flags |= HandshakeConstants.FLAG_EXPORT_PTR_TAG;
-        flags |= HandshakeConstants.FLAG_BIT_BINARIES;
-        flags |= HandshakeConstants.FLAG_NEW_FLOATS;
-        flags |= HandshakeConstants.FLAG_UNICODE_IO;
-        flags |= HandshakeConstants.FLAG_DIST_HDR_ATOM_CACHE;
-        flags |= HandshakeConstants.FLAG_SMALL_ATOM_TAGS;
-        flags |= HandshakeConstants.FLAG_UTF8_ATOMS;
-        flags |= HandshakeConstants.FLAG_MAP_TAG;
-
         trace("sending name");
         output.writeString("n");
         output.writeUInt16(HandshakeConstants.VERSION);
-        output.writeInt32(flags);
+        output.writeInt32(flags());
         output.writeString(fullNodeName);
 
         var bytes: Bytes = output.getBytes();
@@ -79,27 +62,16 @@ class ErlangNodeConnection {
 
     private function continueWithHandshake():Void {
         nodeSocket.input.bigEndian = true;
-        nodeSocket.input.readUInt16();
+        var messageLength: Int = nodeSocket.input.readUInt16();
         nodeSocket.input.readString(1);
         nodeSocket.input.readUInt16();
         nodeSocket.input.readInt32();
         var challenge:UInt = nodeSocket.input.readInt32();
 
-        Thread.create(function() {
-           try {
-               while(true) {
-                   nodeSocket.input.read(1);
-               }
-           } catch(e: Dynamic) {
+        var nodeConnecting: String = nodeSocket.input.readString(messageLength - 1 - 2 - 4 - 4);
+        trace(nodeConnecting);
 
-           }
-        });
-        Sys.sleep(0.2);
-
-        var bytesOutput = new BytesOutput();
-        bytesOutput.bigEndian = true;
-        bytesOutput.writeString("food" + challenge);
-        var hash: Bytes = Md5.make(bytesOutput.getBytes());
+        var hash: Bytes = hash("food", challenge);
 
         var bo: BytesOutput = new BytesOutput();
         bo.bigEndian = true;
@@ -147,6 +119,26 @@ class ErlangNodeConnection {
         }
     }
 
+    private static inline function flags(): Int {
+        var flags: Int = HandshakeConstants.FLAG_PUBLISHED;
+        flags |= HandshakeConstants.FLAG_EXTENDED_REFERENCES;
+        flags |= HandshakeConstants.FLAG_DIST_MONITOR;
+        flags |= HandshakeConstants.FLAG_FUN_TAGS;
+        flags |= HandshakeConstants.FLAG_DIST_MONITOR_NAME;
+        flags |= HandshakeConstants.FLAG_HIDDEN_ATOM_CACHE;
+        flags |= HandshakeConstants.FLAG_NEW_FUN_TAGS;
+        flags |= HandshakeConstants.FLAG_EXTENDED_PIDS_PORTS;
+        flags |= HandshakeConstants.FLAG_EXPORT_PTR_TAG;
+        flags |= HandshakeConstants.FLAG_BIT_BINARIES;
+        flags |= HandshakeConstants.FLAG_NEW_FLOATS;
+        flags |= HandshakeConstants.FLAG_UNICODE_IO;
+        flags |= HandshakeConstants.FLAG_DIST_HDR_ATOM_CACHE;
+        flags |= HandshakeConstants.FLAG_SMALL_ATOM_TAGS;
+        flags |= HandshakeConstants.FLAG_UTF8_ATOMS;
+        flags |= HandshakeConstants.FLAG_MAP_TAG;
+        return flags;
+    }
+
     public static function receiveConnect(socket: Socket): Void {
         socket.setBlocking(true);
         trace("got other socket");
@@ -172,41 +164,28 @@ class ErlangNodeConnection {
         }
     }
 
+    private static inline function hash(cookie: String, challenge: Int): Bytes {
+        var bytesOutput = new BytesOutput();
+        bytesOutput.bigEndian = true;
+        bytesOutput.writeString("food" + challenge);
+        return Md5.make(bytesOutput.getBytes());
+    }
+
     private static function respondConnect(socket: Socket): Void {
         var output: BytesOutput = new BytesOutput();
         output.bigEndian = true;
         output.writeUInt16(3);
         output.writeString("sok");
-        socket.output.write(output.getBytes());
-
-        var bo = new BytesOutput();
-        bo.bigEndian = true;
 
         var challenge: UInt = Std.random(10000);
-        trace(challenge);
-        bo.writeString("food" + challenge);
-        var b: Bytes = bo.getBytes();
-        var d: Bytes = Md5.make(b);
 
-        var output: BytesOutput = new BytesOutput();
-        output.bigEndian = true;
-
+        output.writeUInt16(1 + 2 + 4 + 4 + "bar@127.0.0.1".length);
         output.writeString("n");
         output.writeUInt16(HandshakeConstants.VERSION);
-        output.writeInt32(HandshakeConstants.FLAG_EXTENDED_REFERENCES +
-            HandshakeConstants.FLAG_EXTENDED_PIDS_PORTS +
-            HandshakeConstants.FLAG_UTF8_ATOMS);
-        output.write(b);
+        output.writeInt32(flags());
+        output.writeInt32(challenge);
         output.writeString("bar@127.0.0.1");
         socket.output.write(output.getBytes());
-
-//        var outputBytes: Bytes = output.getBytes();
-//        trace(outputBytes.length);
-//        var bytes: Bytes = Bytes.alloc(2 + outputBytes.length);
-//        trace(bytes.length);
-//        bytes.setUInt16(0, outputBytes.length);
-//        bytes.blit(2, outputBytes, 0, outputBytes.length);
-//        socket.output.write(bytes);
 
         socket.waitForRead();
 
@@ -215,43 +194,24 @@ class ErlangNodeConnection {
         input.bigEndian = true;
 
         var challenge: UInt = 0;
+        var challengeHash: Bytes = null;
         try {
             trace(input.readUInt16());
             trace(input.readString(1));
-            challenge = input.readUInt24();
+            challenge = input.readInt32();
+            challengeHash = input.read(16);
         } catch(e: Dynamic) {
             trace(e);
         }
         trace(challenge);
-//
-//        var bytesOutput = new BytesOutput();
-//
-//        bytesOutput.writeString("food" + challenge);
-//        var b: Bytes = bytesOutput.getBytes();
-//        var d: Bytes = Md5.make(b);
-//        trace(d.length);
-//
-//        var bytesOutput = new BytesOutput();
-//        bytesOutput.bigEndian = true;
-//
-//        bytesOutput.writeUInt16(16);
-//        bytesOutput.writeString("a");
-//        bytesOutput.write(d);
-//
-//        var b = bytesOutput.getBytes();
-//        socket.output.write(b);
-//
-//        socket.waitForRead();
-//        trace("ready to read more, again");
-//        var input: Input = socket.input;
-//        input.bigEndian = true;
-//
-//        try {
-//            while(true) {
-//                trace(input.readString(1));
-//            }
-//        } catch(e: Dynamic) {
-//            trace(e);
-//        }
+
+        //todo: verify challenge hash
+        var output: BytesOutput = new BytesOutput();
+        output.bigEndian = true;
+        output.writeUInt16(17);
+        output.writeString("a");
+        output.write(hash("food", challenge));
+
+        socket.output.write(output.getBytes());
     }
 }
