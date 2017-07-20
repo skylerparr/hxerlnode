@@ -26,8 +26,8 @@ class Main {
       var nodes: Map<String, Int> = epmdConnection.getNodes();
       trace(nodes);
       var port = epmdConnection.portPleaseRequest("foo");
-//      trace(port);
-//      epmdConnection.connectToNode("bar@127.0.0.1", "foo", port);
+      trace(port);
+      epmdConnection.connectToNode("bar@127.0.0.1", "foo", port);
     });
 
     Thread.readMessage(true);
